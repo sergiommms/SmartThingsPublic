@@ -129,7 +129,13 @@ As saídas do recetor externo compatível Extel ligam diretamente à 703S: canal
 ## Batente Extel
 
 Os botões 1 e 2 continuam memorizados no recetor da placa Extel (Vera / Hello V usam a mesma família de
-placa). O package (opção B) tem, comentados, dois scripts opcionais para abrir o batente pelo Home
+placa, tipo ATV 3).
+
+Segundo o guia da placa ATV 3 VERA (a confirmar no seu exemplar), o recetor da placa usa os canais A–D do
+comando aos pares: **sem o jumper JP1**, canal A = abertura total e canal B = abertura parcial (uma folha);
+**com JP1**, os canais C e D fazem esses papéis. Com JP1 retirado, os botões 3 e 4 (canais C e D) ficam
+livres para o seccionado e a placa Extel não reage a eles. Se o batente abrir quando carrega no 3 ou no 4,
+verifique o JP1. As entradas de botoneira da placa são contactos secos NA. O package (opção B) tem, comentados, dois scripts opcionais para abrir o batente pelo Home
 Assistant através de relés nas entradas de botoneira da placa Extel.
 
 **Não ligue esses scripts aos botões 1 e 2 do comando**: o recetor Extel já os trata, e o portão
