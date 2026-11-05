@@ -1,0 +1,291 @@
+# =====================================================================================================================
+#  Package Home Assistant: comando Extel de 4 botões -> portão seccionado DEA Spazio 703S (central 124RRZ)
+#
+#  Para quem usa relés já integrados no Home Assistant (Shelly, Sonoff, Z-Wave, Zigbee...) em vez do ESP32
+#  do ficheiro esphome/portao-seccionado.yaml. Se usar o ESP32, NÃO precisa deste package.
+#
+#  Instalação:
+#    1. configuration.yaml:
+#         homeassistant:
+#           packages: !include_dir_named packages
+#    2. Copiar este ficheiro para <config>/packages/extel_dea_spazio.yaml
+#    3. Substituir as entidades de exemplo (procurar "ALTERAR") pelas suas.
+#    4. Reiniciar o Home Assistant.
+#
+#  Parâmetros da central: P030 = 001 (PED fecha, AP/START abre), P027 = 000 (contacto 5-6 = portão não fechado).
+#
+#  Entidades de exemplo usadas (ALTERAR):
+#    switch.rele_dea_abrir                    relé NA entre 16 (START) e 21 (COM)
+#    switch.rele_dea_fechar                   relé NA entre 17 (PEDON) e 21 (COM)
+#    switch.rele_dea_parar                    relé cujo contacto NF fica em série em 18 (STOP) - 21 (COM)
+#    binary_sensor.portao_seccionado_contacto contacto livre 5-6 da central (ou sensor magnético):
+#                                             on = aberto / em movimento, off = fechado (opcional)
+#    binary_sensor.comando_extel_botao_c      on enquanto o botão C do comando Extel está premido (opcional:
+#    binary_sensor.comando_extel_botao_d      dispensável se a 703S aprender diretamente o comando Extel)
+#
+#  Os botões A e B continuam memorizados no recetor da placa Extel (Vera / Hello V) e não passam por aqui.
+# =====================================================================================================================
+
+input_select:
+  portao_seccionado_estado:
+    name: Portão seccionado - estado
+    icon: mdi:garage
+    options:
+      - fechado
+      - a_abrir
+      - aberto
+      - a_fechar
+      - parado
+    initial: fechado
+
+timer:
+  portao_seccionado_curso:
+    name: Portão seccionado - tempo de curso
+    # Tempo do curso completo, medido no local (um pouco acima do real).
+    duration: "00:00:20"
+
+script:
+  portao_seccionado_impulso:
+    alias: Portão seccionado - impulso num relé
+    mode: parallel
+    fields:
+      rele:
+        description: Entidade do relé
+        example: switch.rele_dea_abrir
+    sequence:
+      - action: switch.turn_on
+        target:
+          entity_id: "{{ rele }}"
+      - delay:
+          milliseconds: 600
+      - action: switch.turn_off
+        target:
+          entity_id: "{{ rele }}"
+
+  portao_seccionado_abrir:
+    alias: Portão seccionado - abrir
+    mode: single
+    sequence:
+      - action: script.portao_seccionado_impulso
+        data:
+          rele: switch.rele_dea_abrir # ALTERAR
+      - action: input_select.select_option
+        target:
+          entity_id: input_select.portao_seccionado_estado
+        data:
+          option: a_abrir
+      - action: timer.start
+        target:
+          entity_id: timer.portao_seccionado_curso
+
+  portao_seccionado_fechar:
+    alias: Portão seccionado - fechar
+    mode: single
+    sequence:
+      - action: script.portao_seccionado_impulso
+        data:
+          rele: switch.rele_dea_fechar # ALTERAR
+      - action: input_select.select_option
+        target:
+          entity_id: input_select.portao_seccionado_estado
+        data:
+          option: a_fechar
+      - action: timer.start
+        target:
+          entity_id: timer.portao_seccionado_curso
+
+  portao_seccionado_parar:
+    alias: Portão seccionado - parar
+    mode: single
+    sequence:
+      # A entrada STOP só bloqueia: é seguro mesmo com o portão parado.
+      - action: script.portao_seccionado_impulso
+        data:
+          rele: switch.rele_dea_parar # ALTERAR
+      - condition: state
+        entity_id: input_select.portao_seccionado_estado
+        state:
+          - a_abrir
+          - a_fechar
+      - action: timer.cancel
+        target:
+          entity_id: timer.portao_seccionado_curso
+      - action: input_select.select_option
+        target:
+          entity_id: input_select.portao_seccionado_estado
+        data:
+          option: parado
+
+template:
+  - cover:
+      - name: Portão seccionado
+        unique_id: portao_seccionado_dea_spazio
+        device_class: garage
+        state: >-
+          {{ {'fechado': 'closed', 'aberto': 'open', 'a_abrir': 'opening',
+              'a_fechar': 'closing', 'parado': 'open'}
+             .get(states('input_select.portao_seccionado_estado'), 'unknown') }}
+        open_cover:
+          - action: script.portao_seccionado_abrir
+        close_cover:
+          - action: script.portao_seccionado_fechar
+        stop_cover:
+          - action: script.portao_seccionado_parar
+
+automation:
+  # Botão C do comando Extel: abrir; se já estiver a abrir, parar.
+  - id: portao_seccionado_botao_c
+    alias: Portão seccionado - botão C do comando Extel
+    # "single" + espera no fim: repetições do código durante 1,5 s são ignoradas.
+    mode: single
+    max_exceeded: silent
+    triggers:
+      - trigger: state
+        entity_id: binary_sensor.comando_extel_botao_c # ALTERAR
+        from: "off"
+        to: "on"
+    actions:
+      - if:
+          - condition: state
+            entity_id: input_select.portao_seccionado_estado
+            state: a_abrir
+        then:
+          - action: script.portao_seccionado_parar
+        else:
+          - action: script.portao_seccionado_abrir
+      - delay:
+          milliseconds: 1500
+
+  # Botão D do comando Extel: fechar; se já estiver a fechar, parar.
+  - id: portao_seccionado_botao_d
+    alias: Portão seccionado - botão D do comando Extel
+    mode: single
+    max_exceeded: silent
+    triggers:
+      - trigger: state
+        entity_id: binary_sensor.comando_extel_botao_d # ALTERAR
+        from: "off"
+        to: "on"
+    actions:
+      - if:
+          - condition: state
+            entity_id: input_select.portao_seccionado_estado
+            state: a_fechar
+        then:
+          - action: script.portao_seccionado_parar
+        else:
+          - action: script.portao_seccionado_fechar
+      - delay:
+          milliseconds: 1500
+
+  # Fim do tempo de curso: confirmar o estado final.
+  - id: portao_seccionado_fim_curso
+    alias: Portão seccionado - fim do tempo de curso
+    mode: queued
+    triggers:
+      - trigger: event
+        event_type: timer.finished
+        event_data:
+          entity_id: timer.portao_seccionado_curso
+    actions:
+      - variables:
+          estado: "{{ states('input_select.portao_seccionado_estado') }}"
+          contacto: "{{ states('binary_sensor.portao_seccionado_contacto') }}" # ALTERAR
+      - choose:
+          - conditions: "{{ estado == 'a_abrir' }}"
+            sequence:
+              - action: input_select.select_option
+                target:
+                  entity_id: input_select.portao_seccionado_estado
+                data:
+                  option: aberto
+          - conditions: "{{ estado == 'a_fechar' }}"
+            sequence:
+              - action: input_select.select_option
+                target:
+                  entity_id: input_select.portao_seccionado_estado
+                data:
+                  # Com sensor: só "fechado" se o sensor confirmar (senão houve obstáculo / fotocélula).
+                  # Sem sensor (entidade inexistente): assume fechado.
+                  option: "{{ 'parado' if contacto == 'on' else 'fechado' }}"
+
+  # Contacto 5-6 da central ou sensor magnético (opcional).
+  - id: portao_seccionado_sensor
+    alias: Portão seccionado - sensor de fim de curso
+    mode: queued
+    triggers:
+      - trigger: state
+        entity_id: binary_sensor.portao_seccionado_contacto # ALTERAR
+        to: "off"
+        id: fechou
+      - trigger: state
+        entity_id: binary_sensor.portao_seccionado_contacto # ALTERAR
+        from: "off"
+        to: "on"
+        id: abriu
+    actions:
+      - choose:
+          - conditions:
+              - condition: trigger
+                id: fechou
+            sequence:
+              - action: timer.cancel
+                target:
+                  entity_id: timer.portao_seccionado_curso
+              - action: input_select.select_option
+                target:
+                  entity_id: input_select.portao_seccionado_estado
+                data:
+                  option: fechado
+          # Abriu sem passar pelo Home Assistant (comando DEA original, botoneira...).
+          - conditions:
+              - condition: trigger
+                id: abriu
+              - condition: state
+                entity_id: input_select.portao_seccionado_estado
+                state: fechado
+            sequence:
+              - action: input_select.select_option
+                target:
+                  entity_id: input_select.portao_seccionado_estado
+                data:
+                  option: a_abrir
+              - action: timer.start
+                target:
+                  entity_id: timer.portao_seccionado_curso
+
+  # Ao arrancar o Home Assistant, sincronizar com o sensor (se existir).
+  - id: portao_seccionado_arranque
+    alias: Portão seccionado - sincronizar no arranque
+    triggers:
+      - trigger: homeassistant
+        event: start
+    conditions:
+      - condition: template
+        value_template: "{{ states('binary_sensor.portao_seccionado_contacto') in ['on', 'off'] }}" # ALTERAR
+    actions:
+      - action: input_select.select_option
+        target:
+          entity_id: input_select.portao_seccionado_estado
+        data:
+          option: "{{ 'fechado' if is_state('binary_sensor.portao_seccionado_contacto', 'off') else 'aberto' }}" # ALTERAR
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Opcional: abrir o batente Extel (Vera / Hello V, placa ATV 3) a partir do Home Assistant, com relés de contacto
+# seco NA nos bornes da placa: STR-COM = abertura total, PED-COM = abertura parcial (uma folha).
+# NÃO associe estes scripts aos botões A e B do comando: o recetor Extel já os trata e o portão receberia duas
+# ordens seguidas.
+# Descomente e junte ao bloco "script:" acima.
+# ---------------------------------------------------------------------------------------------------------------------
+#  batente_uma_folha:
+#    alias: Batente Extel - abrir uma folha
+#    sequence:
+#      - action: script.portao_seccionado_impulso
+#        data:
+#          rele: switch.rele_extel_uma_folha # ALTERAR
+#  batente_duas_folhas:
+#    alias: Batente Extel - abrir duas folhas
+#    sequence:
+#      - action: script.portao_seccionado_impulso
+#        data:
+#          rele: switch.rele_extel_duas_folhas # ALTERAR
