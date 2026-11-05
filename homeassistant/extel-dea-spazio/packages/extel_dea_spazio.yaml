@@ -1,5 +1,5 @@
 # =====================================================================================================================
-#  Package Home Assistant: comando Extel de 4 botões -> portão seccionado DEA Spazio 703S
+#  Package Home Assistant: comando Extel de 4 botões -> portão seccionado DEA Spazio 703S (central 124RRZ)
 #
 #  Para quem usa relés já integrados no Home Assistant (Shelly, Sonoff, Z-Wave, Zigbee...) em vez do ESP32
 #  do ficheiro esphome/portao-seccionado.yaml. Se usar o ESP32, NÃO precisa deste package.
@@ -12,16 +12,18 @@
 #    3. Substituir as entidades de exemplo (procurar "ALTERAR") pelas suas.
 #    4. Reiniciar o Home Assistant.
 #
-#  Entidades de exemplo usadas (ALTERAR):
-#    switch.rele_dea_ap                       relé na entrada AP (abrir) da 703S
-#    switch.rele_dea_chiude                   relé na entrada CHIUDE/PED (fechar), parâmetro PED = 1
-#    switch.rele_dea_start                    relé na entrada START (usado só para parar; START em passo-a-passo)
-#    binary_sensor.portao_seccionado_contacto sensor magnético do seccionado: on = aberto, off = fechado
-#                                             (convenção normal dos sensores de porta; opcional)
-#    binary_sensor.comando_extel_botao_3      on enquanto o botão 3 do comando Extel está premido
-#    binary_sensor.comando_extel_botao_4      on enquanto o botão 4 está premido
+#  Parâmetros da central: P030 = 001 (PED fecha, AP/START abre), P027 = 000 (contacto 5-6 = portão não fechado).
 #
-#  Os botões 1 e 2 continuam memorizados no recetor da placa Extel (Vera / Hello V) e não passam por aqui.
+#  Entidades de exemplo usadas (ALTERAR):
+#    switch.rele_dea_abrir                    relé NA entre 16 (START) e 21 (COM)
+#    switch.rele_dea_fechar                   relé NA entre 17 (PEDON) e 21 (COM)
+#    switch.rele_dea_parar                    relé cujo contacto NF fica em série em 18 (STOP) - 21 (COM)
+#    binary_sensor.portao_seccionado_contacto contacto livre 5-6 da central (ou sensor magnético):
+#                                             on = aberto / em movimento, off = fechado (opcional)
+#    binary_sensor.comando_extel_botao_c      on enquanto o botão C do comando Extel está premido (opcional:
+#    binary_sensor.comando_extel_botao_d      dispensável se a 703S aprender diretamente o comando Extel)
+#
+#  Os botões A e B continuam memorizados no recetor da placa Extel (Vera / Hello V) e não passam por aqui.
 # =====================================================================================================================
 
 input_select:
@@ -49,7 +51,7 @@ script:
     fields:
       rele:
         description: Entidade do relé
-        example: switch.rele_dea_ap
+        example: switch.rele_dea_abrir
     sequence:
       - action: switch.turn_on
         target:
@@ -66,7 +68,7 @@ script:
     sequence:
       - action: script.portao_seccionado_impulso
         data:
-          rele: switch.rele_dea_ap # ALTERAR
+          rele: switch.rele_dea_abrir # ALTERAR
       - action: input_select.select_option
         target:
           entity_id: input_select.portao_seccionado_estado
@@ -82,7 +84,7 @@ script:
     sequence:
       - action: script.portao_seccionado_impulso
         data:
-          rele: switch.rele_dea_chiude # ALTERAR
+          rele: switch.rele_dea_fechar # ALTERAR
       - action: input_select.select_option
         target:
           entity_id: input_select.portao_seccionado_estado
@@ -96,15 +98,15 @@ script:
     alias: Portão seccionado - parar
     mode: single
     sequence:
-      # Só com o portão em movimento: um impulso START com o portão parado poria-o em movimento.
+      # A entrada STOP só bloqueia: é seguro mesmo com o portão parado.
+      - action: script.portao_seccionado_impulso
+        data:
+          rele: switch.rele_dea_parar # ALTERAR
       - condition: state
         entity_id: input_select.portao_seccionado_estado
         state:
           - a_abrir
           - a_fechar
-      - action: script.portao_seccionado_impulso
-        data:
-          rele: switch.rele_dea_start # ALTERAR
       - action: timer.cancel
         target:
           entity_id: timer.portao_seccionado_curso
@@ -131,15 +133,15 @@ template:
           - action: script.portao_seccionado_parar
 
 automation:
-  # Botão 3 do comando Extel: abrir; se já estiver a abrir, parar.
-  - id: portao_seccionado_botao_3
-    alias: Portão seccionado - botão 3 do comando Extel
+  # Botão C do comando Extel: abrir; se já estiver a abrir, parar.
+  - id: portao_seccionado_botao_c
+    alias: Portão seccionado - botão C do comando Extel
     # "single" + espera no fim: repetições do código durante 1,5 s são ignoradas.
     mode: single
     max_exceeded: silent
     triggers:
       - trigger: state
-        entity_id: binary_sensor.comando_extel_botao_3 # ALTERAR
+        entity_id: binary_sensor.comando_extel_botao_c # ALTERAR
         from: "off"
         to: "on"
     actions:
@@ -154,14 +156,14 @@ automation:
       - delay:
           milliseconds: 1500
 
-  # Botão 4 do comando Extel: fechar; se já estiver a fechar, parar.
-  - id: portao_seccionado_botao_4
-    alias: Portão seccionado - botão 4 do comando Extel
+  # Botão D do comando Extel: fechar; se já estiver a fechar, parar.
+  - id: portao_seccionado_botao_d
+    alias: Portão seccionado - botão D do comando Extel
     mode: single
     max_exceeded: silent
     triggers:
       - trigger: state
-        entity_id: binary_sensor.comando_extel_botao_4 # ALTERAR
+        entity_id: binary_sensor.comando_extel_botao_d # ALTERAR
         from: "off"
         to: "on"
     actions:
@@ -207,7 +209,7 @@ automation:
                   # Sem sensor (entidade inexistente): assume fechado.
                   option: "{{ 'parado' if contacto == 'on' else 'fechado' }}"
 
-  # Sensor magnético do seccionado (opcional).
+  # Contacto 5-6 da central ou sensor magnético (opcional).
   - id: portao_seccionado_sensor
     alias: Portão seccionado - sensor de fim de curso
     mode: queued
@@ -269,9 +271,10 @@ automation:
           option: "{{ 'fechado' if is_state('binary_sensor.portao_seccionado_contacto', 'off') else 'aberto' }}" # ALTERAR
 
 # ---------------------------------------------------------------------------------------------------------------------
-# Opcional: abrir o batente Extel (Vera / Hello V) a partir do Home Assistant, com relés nas entradas de botoneira
-# da placa Extel. NÃO associe estes scripts aos botões 1 e 2 do comando: o recetor Extel já os trata e o portão
-# receberia duas ordens seguidas.
+# Opcional: abrir o batente Extel (Vera / Hello V, placa ATV 3) a partir do Home Assistant, com relés de contacto
+# seco NA nos bornes da placa: STR-COM = abertura total, PED-COM = abertura parcial (uma folha).
+# NÃO associe estes scripts aos botões A e B do comando: o recetor Extel já os trata e o portão receberia duas
+# ordens seguidas.
 # Descomente e junte ao bloco "script:" acima.
 # ---------------------------------------------------------------------------------------------------------------------
 #  batente_uma_folha:

@@ -1,158 +1,158 @@
-# Comando Extel de 4 botões: batente Extel + seccionado DEA Spazio (Home Assistant)
+# Comando Extel de 4 botões: batente Extel + seccionado DEA Spazio 703S (Home Assistant)
 
-Um único comando Extel de **quatro botões** controla dois portões de marcas diferentes:
+Um único comando Extel de **quatro botões** (WEATEM 5: botões A, B, C, D de cima para baixo) controla dois
+portões de marcas diferentes:
 
 | Botão | Portão | Função | Quem atua |
 |-------|--------|--------|-----------|
-| 1 | Batente Extel **Vera / Hello V** (2 folhas) | Abrir **uma folha** | Recetor da placa Extel (como hoje) |
-| 2 | Batente Extel **Vera / Hello V** (2 folhas) | Abrir **duas folhas** | Recetor da placa Extel (como hoje) |
-| 3 | Seccionado **DEA Spazio 703S** | **Abrir** (premir outra vez durante o movimento = parar) | ESP32 ou Home Assistant → relé → central DEA |
-| 4 | Seccionado **DEA Spazio 703S** | **Fechar** (premir outra vez durante o movimento = parar) | idem |
+| A | Batente Extel **Vera / Hello V** (placa ATV 3) | Abertura **total** (duas folhas) | Recetor da placa Extel |
+| B | Batente Extel **Vera / Hello V** | Abertura **parcial** (uma folha) | Recetor da placa Extel |
+| C | Seccionado **DEA Spazio 703S** (central 124RRZ) | **Abrir** | Recetor da 703S *ou* recetor externo / ESP32 |
+| D | Seccionado **DEA Spazio 703S** | **Fechar** | idem |
 
-A central da Spazio 703S só aprende comandos rádio DEA. Os botões 3 e 4 do comando Extel são captados por
-um recetor à parte e transformados em impulsos de contacto seco nas entradas da central.
+Fontes: guia de instalação Extel VERA "Type ATV 3" (V3, 04/2012) e notice 760405, e manual DEA "Spazio
+702S/703S – Operating instructions and warnings" (Tabela 1, ligações; Tabela 2, parâmetros).
 
-No Home Assistant, o seccionado aparece como um **portão de garagem** (`cover`) com estado
-aberto / fechado / a abrir / a fechar. Pode ser comandado pela app e usado em automações, na Alexa,
-no Google, etc.
+## O que os manuais dizem
 
-## Três formas de montar
+**Comando Extel (WEATEM 5):** código **rolling**, 433,92 MHz, pilha CR2032.
 
-| | O que é | Funciona sem Wi-Fi / sem HA | Estado na app |
-|---|---|---|---|
-| **A. ESP32 com ESPHome** (recomendado) | `esphome/portao-seccionado.yaml` | **Sim**, a lógica corre no ESP32 | Sim |
-| **B. Relés no Home Assistant** (Shelly, Z-Wave, Zigbee...) | `packages/extel_dea_spazio.yaml` | Não, depende do HA | Sim |
-| **C. Sem domótica** | recetor ligado diretamente à central | Sim | Não |
+**Placa Extel ATV 3:** o jumper **JP1** escolhe os botões que a placa usa:
+- JP1 **retirado**: A = total, B = parcial. Os botões **C e D ficam livres**.
+- JP1 colocado: C = total, D = parcial.
 
-### Comando Extel: código fixo ou rolling code?
+Mudar o JP1 não obriga a reprogramar os comandos.
 
-Isto decide como se captam os botões 3 e 4.
+**Central DEA 124RRZ (Spazio 703S):** o recetor integrado de 433,92 MHz aceita comandos **HCS** (rolling
+code completo ou **só a parte fixa**) e HT12E. Guarda até 100 comandos. Um parâmetro escolhe que botão
+aciona cada entrada.
 
-- Os kits Vera / Hello V trazem comandos de 4 canais a 433,92 MHz, e os comandos de substituição
-  compatíveis com Extel são vendidos como **rolling code**. Nesse caso, um recetor RF genérico não
-  reconhece toques seguidos. Use um **recetor externo compatível com os comandos Extel** com 2 saídas de
-  relé (canais 3 e 4), ligadas às entradas do ESP32 (A), de um módulo de entradas (B) ou diretamente à
-  central (C).
-- Se o comando for de **código fixo**, um recetor RF 433 MHz barato ligado ao ESP32 chega. O ficheiro
-  ESPHome tem um bloco comentado (`remote_receiver`) para isso.
+## Passo 1: tentar que a 703S aprenda diretamente o comando Extel (sem hardware extra)
 
-Para saber qual é o seu caso, ponha o ESP32 com o recetor RF em modo `dump` e carregue duas vezes no
-botão 3. Se aparecer o mesmo código nas duas vezes, é código fixo.
+Em modo **"HCS fixed part only"** (P008 = 000), a central lê só a parte fixa da transmissão (número de série
+e botão), que é igual em qualquer comando HCS/KeeLoq, seja qual for a marca. **Se** o comando Extel usar
+esta família de codificação, a 703S consegue aprendê-lo. Os manuais não dizem que codificação o Extel usa,
+por isso é preciso **testar**. O teste é gratuito e reversível.
 
-## Ligações à DEA Spazio 703S
+No painel da central (teclas +/−/OK; ver "Personalização dos parâmetros" no manual):
 
-Entradas de comando da central (série Spazio 702S/703S; borne comum `COM`):
+1. Anote os valores atuais de **P008**, **P009** e **P030**, para poder voltar atrás.
+2. **P008 = 000** (HCS só parte fixa).
+3. **P009 = 009** (entrada START = canal 3, entrada pedonal = canal 4).
+4. **P030 = 001** (a entrada PED inicia o fecho e a AP/START inicia a abertura).
+5. **P005** (memorizar comandos): quando aparecer `LEAr`, carregar no **botão C** do comando Extel.
+   - Se aparecer `r00x` (por exemplo `r003`), o comando foi aceite. Repita para os outros comandos Extel e
+     espere 10 s para sair.
+   - Se nada acontecer, a 703S não reconhece o comando Extel: siga para o passo 2.
+6. Testar: **C deve abrir** e **D deve fechar**. Se os botões estiverem trocados ou um não funcionar,
+   experimente outro valor de P009 na tabela do manual (por exemplo 012 = START no CH4 e pedonal no CH3).
 
-| Entrada | Tipo | Ligação |
-|---------|------|---------|
-| `AP` | NA | relé **AP**: abrir (botão 3) |
-| `CHIUDE/PED` | NA | relé **CHIUDE**: fechar (botão 4). **Programar o parâmetro da entrada PED = 1** (PED fecha, AP abre) |
-| `START` | NA | relé **START**: usado só para **parar** (programar a lógica do START em **passo-a-passo**) |
-| `STOP` | NF | não mexer (manter a ponte ou a botoneira de STOP existente) |
-| `FOTO` | NF | fotocélulas: manter ligadas e ativas |
+Antes de dar o passo 1 por concluído, confirme estes pontos:
 
-Sensor de fim de curso (recomendado): contacto magnético que fecha com o portão em baixo.
+- **O P009 aplica-se a todos os comandos memorizados.** Os comandos DEA originais também passam a usar os
+  canais 3 e 4. Confirme que continuam a servir, ou ajuste.
+- **Os comandos DEA originais podem precisar de ser memorizados outra vez** depois de mudar o P008.
+- **Segurança:** o modo "só parte fixa" é menos seguro do que o rolling code completo, porque a parte fixa
+  pode ser copiada por um "code grabber". É o preço de usar um comando de outra marca.
 
-```
- Comando Extel ──433 MHz──► recetor da placa Extel ──► batente (botões 1, 2)
-       │
-       └──433 MHz──► recetor externo compatível Extel (canais 3, 4)
-                         │ contactos secos
-                         ▼
-                      ESP32 (ESPHome) ──Wi-Fi──► Home Assistant
-                         │ relés (impulso 0,6 s)
-                         ▼
-          DEA Spazio 703S:  AP (abrir)   CHIUDE/PED (fechar)   START (parar)   COM
-                         ▲
-          sensor magnético "fechado" ──► ESP32
-```
+Se o passo 1 funcionar, o comando Extel abre e fecha os dois portões sem mais nada. O passo 2 só é preciso
+para ter o seccionado no Home Assistant (estado, app, automações).
 
-> Os números dos bornes mudam com a revisão da placa. Confirme no manual DEA da sua central (ligações e
-> parâmetro da entrada PED) antes de ligar, e faça as ligações com a alimentação desligada.
+## Passo 2: Home Assistant
 
-## A. ESP32 com ESPHome (recomendado)
+O seccionado aparece no Home Assistant como **portão de garagem** (`cover`): aberto, fechado, a abrir ou a
+fechar.
 
-Material: um ESP32 DevKit, um módulo de 3 relés (contacto seco), o recetor externo compatível Extel e um
-sensor magnético. Alimente o conjunto com uma fonte própria de 5 V; a saída de 24 V de acessórios da
-central serve apenas se tiver um conversor 24 V → 5 V e corrente disponível.
+### Ligações à central 124RRZ (Tabela 1 do manual DEA)
+
+| Borne | Tipo | Ligação |
+|-------|------|---------|
+| **16 START** – **21 COM** | N.A. | relé **ABRIR** (com P030 = 1, "AP" inicia a abertura) |
+| **17 PEDON** – **21 COM** | N.A. | relé **FECHAR** (com P030 = 1, PED inicia o fecho) |
+| **18 STOP** – **21 COM** | N.F. | contacto **NF** do relé **PARAR**, em série (no lugar da ponte). Relé desligado = funcionamento normal; um impulso para o portão |
+| **5 – 6** | contacto livre, máx. 5 A | **sensor "fechado"** sem sensor magnético: com **P027 = 000** fica fechado com o portão em movimento ou aberto e só abre quando o fecho termina |
+| 19 FOTOC, 20 SIC | N.F. | segurança: manter como estão (fotocélulas, banda) |
+| 9 – 10 (+24 VAUX) | 24 V ⎓ | alimentação de acessórios: pode alimentar o ESP32 através de um conversor 24 V → 5 V, se o consumo total o permitir |
+
+Parâmetros: **P030 = 001**, **P027 = 000**. Mantenha a lógica do START (P025) como está: com P030 = 1, a
+entrada START serve para abrir.
+
+Usa-se a entrada **STOP** para parar, e não o START, porque o STOP só bloqueia e nunca põe o portão em
+movimento. Por isso é seguro mesmo com o portão parado.
+
+### Opção A: ESP32 com ESPHome (recomendado) — `esphome/portao-seccionado.yaml`
+
+Material: ESP32 DevKit, módulo de 3 relés com contactos NA e NF.
 
 | GPIO (predefinido) | Ligação |
 |---|---|
-| GPIO26 | relé AP |
-| GPIO27 | relé CHIUDE |
-| GPIO25 | relé START |
-| GPIO32 ↔ GND | sensor magnético "fechado" |
-| GPIO33 ↔ GND | saída do canal 3 do recetor externo (contacto seco) |
-| GPIO14 ↔ GND | saída do canal 4 do recetor externo (contacto seco) |
+| GPIO26 | relé ABRIR → 16-21 |
+| GPIO27 | relé FECHAR → 17-21 |
+| GPIO25 | relé PARAR (contacto NF) → em série em 18-21 |
+| GPIO32 ↔ GND | contacto livre 5-6 da central |
+| GPIO33 ↔ GND | saída do canal C do recetor externo (só no caso do passo 2 com recetor externo) |
+| GPIO14 ↔ GND | saída do canal D do recetor externo (idem) |
 
-1. No Home Assistant, instalar o add-on/app **ESPHome Device Builder** e criar um dispositivo novo.
-2. Colar o conteúdo de `esphome/portao-seccionado.yaml` e preencher os `secrets` (Wi-Fi e chaves de
-   encriptação; o ESPHome gera as chaves).
-3. Ajustar em `substitutions` o **tempo de curso** (medido no local, um pouco acima do real) e, se
-   preciso, os GPIO.
+1. No Home Assistant, instalar o **ESPHome Device Builder** e criar um dispositivo novo.
+2. Colar `esphome/portao-seccionado.yaml` e preencher os `secrets` (Wi-Fi e chaves geradas pelo ESPHome).
+3. Ajustar em `substitutions` o **tempo de curso** medido no local e, se preciso, os GPIO.
 4. Instalar no ESP32 (a primeira vez por USB). O Home Assistant deteta o dispositivo e cria o portão.
 
 Comportamento:
 
-- Botão 3: abre. Se o portão já estiver a abrir, para.
-- Botão 4: fecha. Se o portão já estiver a fechar, para.
-- Repetições do mesmo botão durante 1,5 s contam como um só toque.
-- O "parar" só envia o impulso START com o portão em movimento. Com o portão parado, um START pô-lo-ia
-  a andar.
-- Com o sensor magnético, "fechado" é o estado real. Sem sensor, o estado é estimado pelo tempo de curso.
+- **Botões (com recetor externo):** C abre e D fecha. Premir de novo durante o movimento para o portão.
+  Repetições dentro de 1,5 s contam como um só toque.
+- **Comandos de fora:** se o portão for aberto pelo recetor da própria 703S, pela botoneira ou por um
+  comando DEA, o contacto 5-6 deteta-o e o estado passa a "aberto".
+- **Fecho não confirmado:** se o contacto 5-6 não confirmar o fecho até `tempo_maximo` (fotocélula ou
+  obstáculo), o estado fica "aberto".
 
-## B. Relés já integrados no Home Assistant
+### Opção B: relés já integrados no Home Assistant — `packages/extel_dea_spazio.yaml`
 
-Para quem prefere, por exemplo, um Shelly com saída livre de potencial nos bornes da 703S.
+Para quem prefere, por exemplo, um Shelly com saídas livres de potencial nos mesmos bornes.
 
 1. Em `configuration.yaml`:
    ```yaml
    homeassistant:
      packages: !include_dir_named packages
    ```
-2. Copiar `packages/extel_dea_spazio.yaml` para `<config>/packages/`.
-3. Substituir as entidades de exemplo (linhas com `# ALTERAR`): relés AP, CHIUDE e START, o sensor do
-   portão e os dois sensores dos botões 3 e 4.
-4. Os botões 3 e 4 têm de existir como `binary_sensor` que fica `on` enquanto se carrega no botão (por
-   ex. as entradas de um Shelly ligadas às saídas do recetor externo). Se a sua integração der eventos em
-   vez de estados (botões Zigbee, pontes RF por MQTT...), troque o `trigger` das duas automações pelo
-   evento correspondente.
-5. Reiniciar o Home Assistant. Aparece `cover.portao_seccionado`.
+2. Copiar o ficheiro para `<config>/packages/` e substituir as entidades marcadas com `# ALTERAR`.
+3. Reiniciar o Home Assistant. Aparece `cover.portao_seccionado`.
 
-O comportamento é o mesmo da opção A, mas tudo depende de o Home Assistant e a rede estarem a funcionar.
+Funciona como a opção A, mas depende de o Home Assistant e a rede estarem a funcionar.
 
-## C. Sem domótica
+## Se a 703S não aprender o comando Extel
 
-As saídas do recetor externo compatível Extel ligam diretamente à 703S: canal 3 → `AP`, canal 4 →
-`CHIUDE/PED` (parâmetro PED = 1). É simples e fiável, mas não dá estado nem controlo pela app.
+Use um **recetor externo compatível com os comandos Extel** (rolling code), com 2 saídas de relé.
+Um recetor RF genérico de código fixo não serve. Há duas formas de o ligar:
 
-## Batente Extel
+- **Sem domótica:** canal C → bornes 16-21 (abrir) e canal D → bornes 17-21 (fechar), com P030 = 001.
+- **Com o ESP32:** ligar as saídas às entradas `canal_c` e `canal_d` (GPIO33 e GPIO14).
 
-Os botões 1 e 2 continuam memorizados no recetor da placa Extel (Vera / Hello V usam a mesma família de
-placa, tipo ATV 3).
+## Batente Extel (placa ATV 3)
 
-Segundo o guia da placa ATV 3 VERA (a confirmar no seu exemplar), o recetor da placa usa os canais A–D do
-comando aos pares: **sem o jumper JP1**, canal A = abertura total e canal B = abertura parcial (uma folha);
-**com JP1**, os canais C e D fazem esses papéis. Com JP1 retirado, os botões 3 e 4 (canais C e D) ficam
-livres para o seccionado e a placa Extel não reage a eles. Se o batente abrir quando carrega no 3 ou no 4,
-verifique o JP1. As entradas de botoneira da placa são contactos secos NA. O package (opção B) tem, comentados, dois scripts opcionais para abrir o batente pelo Home
-Assistant através de relés nas entradas de botoneira da placa Extel.
+- **JP1 retirado:** os botões A e B continuam a servir o batente, e C e D ficam para o seccionado. Se o
+  batente reagir ao C ou ao D, o JP1 está colocado.
+- **Comandar pelo Home Assistant (opcional):** relés de contacto seco **NA** nos bornes da placa:
+  - **STR – COM:** abertura total;
+  - **PED – COM:** abertura parcial (uma folha).
 
-**Não ligue esses scripts aos botões 1 e 2 do comando**: o recetor Extel já os trata, e o portão
-receberia duas ordens seguidas, podendo parar ou inverter.
+  Para módulos de interfone, o manual recomenda o modo impulsional, com um contacto de 0,35 s. O package
+  tem os dois scripts comentados.
+- **Não ligue esses relés aos botões A e B do comando.** O recetor Extel já os trata, e o portão receberia
+  duas ordens seguidas, podendo parar ou inverter.
+- **STOP:** é normalmente fechado e vem shuntado na placa. Só retire a ponte se ligar um botão de STOP.
 
 ## Segurança
 
-- O fecho à distância só deve ser usado com as **fotocélulas e a deteção de obstáculos da central DEA
-  ativas e testadas**. Nem o ESP32 nem o Home Assistant substituem esses dispositivos.
-- Com sensor: se o fecho não for confirmado a tempo (opção A: `tempo_maximo`; opção B: fim do tempo de
-  curso), o estado fica "aberto". O portão pode ter invertido por causa da fotocélula ou de um obstáculo.
-- Instalação elétrica conforme o manual do fabricante e com a alimentação desligada.
+- O fecho à distância exige **fotocélulas (19 FOTOC) e deteção de obstáculos da central DEA ativas e
+  testadas**. Os parâmetros de força P014 e P015 têm de cumprir a norma, e o manual inclui a tabela
+  "Operating control" com o que é exigido em cada tipo de comando. O ESP32 e o Home Assistant não
+  substituem estes dispositivos.
+- Faça as ligações com a alimentação desligada, segundo os manuais.
 
 ## Limitações conhecidas
 
-- Os bornes e o parâmetro PED foram tirados da documentação da série 702S/703S. Confirme na sua placa.
-- Sem sensor, uma abertura feita com o comando DEA original ou com a botoneira não é detetada.
-- Opção A: a configuração passa na validação do ESPHome 2026.10, mas não foi compilada nem testada num
-  ESP32 ligado à central.
-- Opção B: o package passa no `check_config` do Home Assistant 2026.2, mas não foi testado com relés reais.
+- Os manuais não dizem que codificação usa o comando Extel. O passo 1 é um teste e pode não resultar.
+- A configuração ESPHome passa na validação do ESPHome 2026.10 e o package passa no `check_config` do
+  Home Assistant 2026.2. Nenhum dos dois foi compilado nem testado com hardware real.
