@@ -13,6 +13,8 @@ A novidade é o seccionado. A central DEA só reconhece os comandos rádio DEA, 
 comando Extel. Esta SmartApp faz a ponte: os botões 3 e 4 são captados por um recetor de 433,92 MHz
 ligado ao SmartThings e convertidos em impulsos de contacto seco nas entradas da central DEA.
 
+Modelos desta instalação: batente **Extel Vera / Hello V**, seccionado **DEA Spazio 703S**.
+
 Ficheiros:
 
 - `smartapps/sergiommms/extel-comando-4-botoes.src/extel-comando-4-botoes.groovy`: SmartApp (mapeamento dos botões, lógica do seccionado)
@@ -41,7 +43,58 @@ Ficheiros:
   Opcional: sensor magnético "fechado" (e/ou "aberto") no seccionado  ──►  estado real na app
 ```
 
-## Hardware
+## Os modelos desta instalação
+
+| | Batente | Seccionado |
+|---|---|---|
+| Automatismo | Extel **Vera** ou **Hello V** (vérins, 2 folhas) | **DEA Spazio 703S** (motor de teto) |
+| Placa | Placa Extel da gama Vera / Bora / Hello V (vendida como peça de substituição, p.ex. ATV3) | Central integrada do Spazio 703S |
+| Recetor rádio | Integrado na placa Extel; aprende o comando Extel de 4 botões | Integrado, só comandos DEA: **não aprende o Extel** |
+| Ligação ao SmartThings | Opcional (relés nas entradas de botoneira) | Relés nas entradas da central (ver abaixo) |
+
+A Vera e a Hello V usam o mesmo princípio e a mesma família de placa, por isso a configuração é igual
+para as duas.
+
+### Ligação recomendada na DEA Spazio 703S
+
+O manual da série Spazio 702S/703S indica estas entradas de comando na central (bornes com comum `COM`):
+
+| Entrada | Tipo | Uso nesta SmartApp |
+|---------|------|--------------------|
+| `START` | NA | Relé **START** (passo-a-passo). Lógica programável: passo-a-passo (abre-stop-fecha) ou inversão (abre-fecha-abre) |
+| `AP` | NA | Relé **AP (abrir)**: botão 3 |
+| `CHIUDE/PED` | NA | Relé **CHIUDE/PED (fechar)**: botão 4. Programar o parâmetro da entrada PED = **1** (PED fecha, AP abre) |
+| `STOP` | **NF** | Opcional: contacto NF de um relé em série (relé **STOP**). Se não usar, mantenha a ponte ou a botoneira de STOP |
+| `FOTO` | NF | Fotocélulas: manter ligadas e ativas, de preferência também na abertura |
+
+**Configuração sugerida**
+
+- Com dois relés (AP + CHIUDE/PED): botão 3 = abrir, botão 4 = fechar, sem depender da sequência do START.
+  A SmartApp continua a parar o portão se premir o mesmo botão durante o movimento. Isso só funciona se
+  também ligar o relé START ou o relé STOP; caso contrário o segundo toque é ignorado.
+- Com um só relé (START): escolher na SmartApp a mesma lógica programada na central. A SmartApp calcula
+  os impulsos necessários.
+
+> Os números dos bornes variam com a revisão da placa. Confirme no manual DEA da sua central (secção de
+> ligações e programação, parâmetro da entrada PED) antes de ligar. Faça as ligações com a alimentação
+> desligada.
+
+### Comando Extel de 4 botões e recetor para o SmartThings
+
+Os comandos dos kits Vera / Hello V são de 4 canais em 433,92 MHz, e os comandos de substituição
+compatíveis com Extel são vendidos como **rolling code**. Se o seu também o for, uma ponte RF genérica
+(feita para códigos fixos) **não** reconhece os toques de forma fiável. Use então um **recetor externo
+compatível com os comandos Extel**, com saídas de relé:
+
+- Opção A (sem SmartThings): as saídas do recetor externo ligam diretamente à 703S. Canal 3 → `AP`
+  (ou `START`), canal 4 → `CHIUDE/PED`.
+- Opção B (com esta SmartApp): as saídas do recetor externo ligam às entradas de um módulo de contacto seco
+  Z-Wave/Zigbee que gere eventos `button`. A SmartApp aciona os relés da 703S e mantém o estado do portão.
+
+Confirme o tipo de código na notice do kit (Extel 760405 Vera / 762405 Hello V) ou com um teste: se a ponte
+RF aprende o botão 3 e o reconhece em toques seguidos, é código fixo e a ponte serve.
+
+## Hardware (geral)
 
 1. **Comando Extel de 4 botões.** Os botões 1 e 2 ficam memorizados no recetor Extel, como já estão.
    Os botões 3 e 4 **não** são memorizados no recetor Extel.

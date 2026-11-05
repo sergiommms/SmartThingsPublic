@@ -16,9 +16,9 @@
  *  -----
  *  Um único comando Extel de quatro botões passa a controlar dois automatismos de marcas diferentes:
  *
- *    - Botões 1 e 2: portão de batente de duas folhas com automatismo Extel (uma folha / duas folhas).
+ *    - Botões 1 e 2: portão de batente de duas folhas com automatismo Extel Vera / Hello V (uma folha / duas folhas).
  *      O recetor Extel continua a receber estes botões diretamente, como sempre.
- *    - Botões 3 e 4: portão seccionado (abertura vertical) com motor de teto DEA Spazio.
+ *    - Botões 3 e 4: portão seccionado (abertura vertical) com motor de teto DEA Spazio 703S.
  *      A central DEA não reconhece o rádio Extel, por isso os botões 3 e 4 são captados por um recetor/ponte
  *      de 433,92 MHz que os entrega ao SmartThings como eventos "button"; esta SmartApp traduz esses eventos
  *      em impulsos de relé (contacto seco) nas entradas da central DEA (START / passo-a-passo, PED / parcial,
@@ -78,8 +78,8 @@ private getACOES_PREDEFINIDAS() {
 
 private getSEQUENCIAS() {
 	[
-		"4passos": "ABRE - STOP - FECHA - STOP",
-		"2passos": "ABRE - FECHA (inverte durante o movimento)"
+		"4passos": "Passo-a-passo: ABRE - STOP - FECHA - STOP",
+		"2passos": "Inversão: ABRE - FECHA - ABRE (inverte durante o movimento)"
 	]
 }
 
@@ -138,18 +138,23 @@ def paginaBotoes() {
 
 def paginaSpazio() {
 	dynamicPage(name: "paginaSpazio", title: "Portão seccionado - motor DEA Spazio") {
+		section("Central DEA Spazio 703S") {
+			paragraph "Recomendado na 703S: um relé na entrada AP (abrir) e outro na entrada CHIUDE/PED (fechar), " +
+				"com o parâmetro da entrada PED programado a 1 (PED fecha, AP abre). Assim cada botão dá uma ordem " +
+				"direta e não é preciso seguir a sequência do START. Confirme bornes e parâmetro no manual da central."
+		}
 		section("Relés ligados à central DEA (contacto seco, normalmente aberto)") {
 			input "relePasso", "capability.switch", title: "Relé na entrada START (passo-a-passo)", required: false
-			input "releParcial", "capability.switch", title: "Relé na entrada PED (abertura parcial) - opcional", required: false
-			input "releAbrir", "capability.switch", title: "Relé na entrada ABRIR - opcional", required: false
-			input "releFechar", "capability.switch", title: "Relé na entrada FECHAR - opcional", required: false
-			input "releParar", "capability.switch", title: "Relé na entrada STOP (NF, através de relé) - opcional", required: false
+			input "releParcial", "capability.switch", title: "Relé de abertura parcial - opcional (só se a central tiver esta função)", required: false
+			input "releAbrir", "capability.switch", title: "Relé na entrada AP (abrir) - opcional", required: false
+			input "releFechar", "capability.switch", title: "Relé na entrada CHIUDE/PED (fechar, parâmetro PED = 1) - opcional", required: false
+			input "releParar", "capability.switch", title: "Relé em série com a entrada STOP (usar o contacto NF do relé) - opcional", required: false
 			input "duracaoImpulsoMs", "number", title: "Duração do impulso (ms)", defaultValue: 600, range: "100..5000", required: false
 			input "intervaloImpulsosMs", "number", title: "Intervalo entre impulsos seguidos (ms)", defaultValue: 1500, range: "500..10000", required: false
-			input "usarPush", "bool", title: "Os reles já são momentâneos (usar 'push' em vez de ligar/desligar)", defaultValue: false, required: false
+			input "usarPush", "bool", title: "Os relés já são momentâneos (usar 'push' em vez de ligar/desligar)", defaultValue: false, required: false
 		}
 		section("Comportamento da central") {
-			input "sequencia", "enum", title: "Sequência do passo-a-passo programada na central", options: opcoes(SEQUENCIAS), defaultValue: "4passos", required: false
+			input "sequencia", "enum", title: "Lógica do START programada na central", options: opcoes(SEQUENCIAS), defaultValue: "4passos", required: false
 			input "tempoCursoS", "number", title: "Tempo de curso completo (segundos)", defaultValue: 20, range: "3..180", required: false
 			input "tempoParcialS", "number", title: "Tempo da abertura parcial (segundos)", defaultValue: 6, range: "1..120", required: false
 		}
@@ -163,8 +168,9 @@ def paginaSpazio() {
 def paginaBatente() {
 	dynamicPage(name: "paginaBatente", title: "Portão de batente Extel") {
 		section {
-			paragraph "O comando Extel continua a abrir o batente diretamente pelo recetor Extel. Os reles abaixo são " +
-				"opcionais e servem para abrir o batente a partir da app (ligados às entradas de botoeira da central Extel)."
+			paragraph "Placa Extel Vera / Hello V: o comando Extel continua a abrir o batente diretamente pelo recetor " +
+				"da placa (botão 1 = uma folha, botão 2 = duas folhas). Os relés abaixo são opcionais e servem para abrir " +
+				"o batente a partir da app, ligados às entradas de botoneira da placa (confirme os bornes na notice)."
 			input "criarBatente", "bool", title: "Criar dispositivo do portão de batente", defaultValue: true, required: false
 			input "releUmaFolha", "capability.switch", title: "Relé na entrada 'uma folha' (pedonal)", required: false
 			input "releDuasFolhas", "capability.switch", title: "Relé na entrada 'duas folhas' (total)", required: false
@@ -183,9 +189,9 @@ private resumoBotoes() {
 private resumoSpazio() {
 	def partes = []
 	if (relePasso) partes << "START"
-	if (releParcial) partes << "PED"
-	if (releAbrir) partes << "ABRIR"
-	if (releFechar) partes << "FECHAR"
+	if (releParcial) partes << "parcial"
+	if (releAbrir) partes << "AP"
+	if (releFechar) partes << "CHIUDE/PED"
 	if (releParar) partes << "STOP"
 	partes ? "Relés: ${partes.join(', ')}" : "Tocar para configurar"
 }
