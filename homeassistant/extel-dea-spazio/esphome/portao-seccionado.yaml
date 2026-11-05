@@ -1,0 +1,262 @@
+# =====================================================================================================================
+#  Portão seccionado DEA Spazio 703S comandado pelos botões 3 e 4 de um comando Extel (Vera / Hello V)
+#
+#  ESP32 + módulo de relés (contacto seco) ligado à central DEA, com a lógica a correr no próprio ESP32:
+#  o portão continua a responder ao comando Extel mesmo sem Wi-Fi ou sem Home Assistant.
+#  O Home Assistant vê um portão de garagem (cover) com estado aberto / fechado / a abrir / a fechar.
+#
+#  Entradas do comando (escolher uma):
+#    A) Recetor externo compatível com o comando Extel, com 2 saídas de relé -> GPIO "canal 3" e "canal 4".
+#       Obrigatório se o comando for rolling code.
+#    B) Recetor RF 433 MHz ligado ao ESP32 (só para comandos de código fixo): ver o bloco "remote_receiver"
+#       comentado no fim do ficheiro.
+#
+#  Ligações à DEA Spazio 703S (confirmar no manual da central; comum = COM):
+#    relé AP      -> entrada AP (abrir), contacto NA
+#    relé CHIUDE  -> entrada CHIUDE/PED (fechar), contacto NA, com o parâmetro da entrada PED = 1
+#    relé START   -> entrada START (passo-a-passo), contacto NA. Usado só para PARAR com a lógica do
+#                    START em "passo-a-passo" (um impulso durante o movimento para o portão).
+#  Sensor de fim de curso (recomendado): contacto magnético que fecha com o portão em baixo.
+# =====================================================================================================================
+
+substitutions:
+  nome: portao-seccionado
+  nome_amigavel: Portão seccionado
+  # Tempo do curso completo, medido no local (um pouco acima do real).
+  tempo_curso: 20s
+  # Se o sensor "fechado" não confirmar até aqui (fotocélula / obstáculo inverteu), o portão fica "aberto".
+  # Deve ser maior que tempo_curso, para não enviar o impulso START de "parar" com o portão já parado.
+  tempo_maximo: 30s
+  # Duração do impulso nos bornes da central.
+  impulso: 600ms
+  # Ignorar repetições do mesmo botão durante este tempo (recetores e pontes RF repetem o código).
+  janela_repeticao: 1500ms
+  # GPIO (ESP32 DevKit). Ajustar à placa de relés usada.
+  pino_rele_ap: GPIO26
+  pino_rele_chiude: GPIO27
+  pino_rele_start: GPIO25
+  pino_sensor_fechado: GPIO32
+  pino_canal_3: GPIO33
+  pino_canal_4: GPIO14
+
+esphome:
+  name: ${nome}
+  friendly_name: ${nome_amigavel}
+
+esp32:
+  board: esp32dev
+  framework:
+    type: arduino
+
+logger:
+
+api:
+  encryption:
+    key: !secret api_encryption_key
+
+ota:
+  - platform: esphome
+    encryption:
+      key: !secret ota_encryption_key
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  ap:
+    ssid: "${nome} fallback"
+    password: !secret fallback_password
+
+captive_portal:
+
+globals:
+  # true enquanto o portão está (ou se presume que está) em movimento.
+  # Evita que um "parar" com o portão parado envie um impulso START, que o poria em movimento.
+  - id: em_movimento
+    type: bool
+    initial_value: "false"
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Relés: cada um dá um impulso e desliga-se sozinho
+# ---------------------------------------------------------------------------------------------------------------------
+switch:
+  - platform: gpio
+    id: rele_ap
+    name: "Relé AP (abrir)"
+    pin: ${pino_rele_ap}
+    restore_mode: ALWAYS_OFF
+    internal: true
+    on_turn_on:
+      - delay: ${impulso}
+      - switch.turn_off: rele_ap
+
+  - platform: gpio
+    id: rele_chiude
+    name: "Relé CHIUDE-PED (fechar)"
+    pin: ${pino_rele_chiude}
+    restore_mode: ALWAYS_OFF
+    internal: true
+    on_turn_on:
+      - delay: ${impulso}
+      - switch.turn_off: rele_chiude
+
+  - platform: gpio
+    id: rele_start
+    name: "Relé START (passo-a-passo)"
+    pin: ${pino_rele_start}
+    restore_mode: ALWAYS_OFF
+    internal: true
+    on_turn_on:
+      - delay: ${impulso}
+      - switch.turn_off: rele_start
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Scripts
+# ---------------------------------------------------------------------------------------------------------------------
+script:
+  # Marca o portão como em movimento durante o tempo de curso.
+  - id: movimento
+    mode: restart
+    then:
+      - lambda: id(em_movimento) = true;
+      - delay: ${tempo_curso}
+      - lambda: id(em_movimento) = false;
+
+  # Botão 3: abrir; se já estiver a abrir, parar.
+  - id: botao_abrir
+    then:
+      - if:
+          condition:
+            lambda: return id(portao).current_operation == cover::COVER_OPERATION_OPENING;
+          then:
+            - cover.stop: portao
+          else:
+            - cover.open: portao
+
+  # Botão 4: fechar; se já estiver a fechar, parar.
+  - id: botao_fechar
+    then:
+      - if:
+          condition:
+            lambda: return id(portao).current_operation == cover::COVER_OPERATION_CLOSING;
+          then:
+            - cover.stop: portao
+          else:
+            - cover.close: portao
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Sensores e entradas do comando
+# ---------------------------------------------------------------------------------------------------------------------
+binary_sensor:
+  - platform: gpio
+    id: fim_fechado
+    name: "Fim de curso fechado"
+    device_class: garage_door
+    pin:
+      number: ${pino_sensor_fechado}
+      mode:
+        input: true
+        pullup: true
+      # Contacto fechado (portão em baixo) liga o GPIO à massa -> "on" = fechado.
+      inverted: true
+    filters:
+      - delayed_on_off: 100ms
+    on_press:
+      - script.stop: movimento
+      - lambda: id(em_movimento) = false;
+
+  # Saída do canal 3 do recetor externo (contacto seco entre o GPIO e GND).
+  - platform: gpio
+    id: canal_3
+    name: "Comando Extel botão 3"
+    pin:
+      number: ${pino_canal_3}
+      mode:
+        input: true
+        pullup: true
+      inverted: true
+    filters:
+      - delayed_on: 50ms
+      # Repetições dentro da janela contam como o mesmo toque.
+      - delayed_off: ${janela_repeticao}
+    on_press:
+      - script.execute: botao_abrir
+
+  # Saída do canal 4 do recetor externo.
+  - platform: gpio
+    id: canal_4
+    name: "Comando Extel botão 4"
+    pin:
+      number: ${pino_canal_4}
+      mode:
+        input: true
+        pullup: true
+      inverted: true
+    filters:
+      - delayed_on: 50ms
+      - delayed_off: ${janela_repeticao}
+    on_press:
+      - script.execute: botao_fechar
+
+# ---------------------------------------------------------------------------------------------------------------------
+# O portão visto pelo Home Assistant
+# ---------------------------------------------------------------------------------------------------------------------
+cover:
+  - platform: feedback
+    id: portao
+    name: None
+    device_class: garage
+    # A central DEA para sozinha nos fins de curso: o ESP32 não envia STOP no fim do tempo de curso.
+    has_built_in_endstop: true
+    open_duration: ${tempo_curso}
+    close_duration: ${tempo_curso}
+    max_duration: ${tempo_maximo}
+    close_endstop: fim_fechado
+    open_action:
+      - switch.turn_on: rele_ap
+      - script.execute: movimento
+    close_action:
+      - switch.turn_on: rele_chiude
+      - script.execute: movimento
+    stop_action:
+      # Só com o portão em movimento: um impulso START com o portão parado poria-o em movimento.
+      - if:
+          condition:
+            lambda: return id(em_movimento);
+          then:
+            - switch.turn_on: rele_start
+      - script.stop: movimento
+      - lambda: id(em_movimento) = false;
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Opção B: recetor RF 433 MHz no ESP32 (só comandos Extel de código fixo)
+#
+# 1. Descomentar remote_receiver, gravar, carregar nos botões 3 e 4 e ler os códigos no log ("rc_switch").
+# 2. Descomentar os dois binary_sensor abaixo com esses códigos (e retirar canal_3 / canal_4 acima, se não usados).
+# ---------------------------------------------------------------------------------------------------------------------
+# remote_receiver:
+#   pin:
+#     number: GPIO4
+#   dump: rc_switch
+#   tolerance: 50%
+#   filter: 250us
+#   idle: 4ms
+#
+# binary_sensor:
+#   - platform: remote_receiver
+#     name: "Comando Extel botão 3 (RF)"
+#     rc_switch_raw:
+#       code: "COLAR_AQUI_O_CODIGO_DO_BOTAO_3"
+#       protocol: 1
+#     filters:
+#       - delayed_off: ${janela_repeticao}
+#     on_press:
+#       - script.execute: botao_abrir
+#   - platform: remote_receiver
+#     name: "Comando Extel botão 4 (RF)"
+#     rc_switch_raw:
+#       code: "COLAR_AQUI_O_CODIGO_DO_BOTAO_4"
+#       protocol: 1
+#     filters:
+#       - delayed_off: ${janela_repeticao}
+#     on_press:
+#       - script.execute: botao_fechar
