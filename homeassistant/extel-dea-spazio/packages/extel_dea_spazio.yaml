@@ -20,10 +20,12 @@
 #    switch.rele_dea_parar                    relé cujo contacto NF fica em série em 18 (STOP) - 21 (COM)
 #    binary_sensor.portao_seccionado_contacto contacto livre 5-6 da central (ou sensor magnético):
 #                                             on = aberto / em movimento, off = fechado (opcional)
-#    binary_sensor.comando_extel_botao_c      on enquanto o botão C do comando Extel está premido (opcional:
-#    binary_sensor.comando_extel_botao_d      dispensável se a 703S aprender diretamente o comando Extel)
+#    binary_sensor.comando_extel_botao_c      on enquanto o botão C do comando Extel está premido (opcional: saídas
+#    binary_sensor.comando_extel_botao_d      do recetor TRANSMY lidas por um módulo de entradas; dispensável se o
+#                                             TRANSMY ligar diretamente à central ou na montagem A com GTI4)
 #
-#  Os botões A e B continuam memorizados no recetor da placa Extel (Vera / Hello V) e não passam por aqui.
+#  Os botões A e B do WEATEM 5 continuam memorizados na placa Extel ATV 3 e não passam por aqui. Ver o README
+#  para as duas montagens (A: GTI4 + 291/X; B: WEATEM 5 + TRANSMY).
 # =====================================================================================================================
 
 input_select:

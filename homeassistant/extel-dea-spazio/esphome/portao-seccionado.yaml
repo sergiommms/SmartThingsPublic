@@ -14,10 +14,11 @@
 #
 #  Parâmetros a programar na central: P030 = 001 (PED fecha, AP abre); P027 = 000.
 #
-#  Botões C e D do comando Extel (rolling code, 433,92 MHz):
-#    1.º Tentar que o recetor da própria 703S os aprenda (P008 = 000, P009 = 009): ver o README.
-#        Se resultar, o ESP32 não precisa das entradas canal_c / canal_d.
-#    2.º Caso contrário: recetor externo compatível Extel, com as saídas ligadas a canal_c e canal_d.
+#  Botões C e D do comando Extel WEATEM 5 (rolling code, 433,92 MHz), montagem B do README:
+#    recebidos por um recetor Extel TRANSMY (ATRC 3), que verifica o rolling code completo. As saídas
+#    NO/COM do TRANSMY ligam ou diretamente a 16-21 e 17-21 da central (o ESP32 só lê o estado por 5-6),
+#    ou às entradas canal_c e canal_d deste ESP32, que então atua os relés.
+#  Na montagem A (comando DEA GTI4 + recetor 291/X na placa Extel) as entradas canal_c / canal_d não se usam.
 # =====================================================================================================================
 
 substitutions:
@@ -160,8 +161,8 @@ binary_sensor:
             id(portao).publish_state();
           }
 
-  # Saída do canal C do recetor externo (contacto seco entre o GPIO e GND). Dispensável se a 703S
-  # aprender diretamente o comando Extel.
+  # Saída do canal 1 do recetor TRANSMY (contacto seco entre o GPIO e GND), botão C. Dispensável se o
+  # TRANSMY ligar diretamente à central ou na montagem A.
   - platform: gpio
     id: canal_c
     name: "Comando Extel botão C"
@@ -177,7 +178,7 @@ binary_sensor:
     on_press:
       - script.execute: botao_abrir
 
-  # Saída do canal D do recetor externo.
+  # Saída do canal 2 do recetor TRANSMY, botão D.
   - platform: gpio
     id: canal_d
     name: "Comando Extel botão D"
