@@ -17,8 +17,11 @@ Há duas montagens, independentes e cumuláveis:
 | **A** | DEA **GTI4** | recetor externo DEA **291/X** junto à placa Extel | à venda |
 | **B** | Extel **WEATEM 5** | recetor externo Extel **TRANSMY** (ATRC 3) junto à central DEA | descontinuado, só em segunda mão |
 
-Em qualquer das montagens, o seccionado pode ainda aparecer no Home Assistant como portão de garagem, com estado,
-através de um ESP32 (ESPHome) ou de relés já integrados. E um Shelly pode substituir o módulo de iluminação Extel.
+**Recomendação:** quem já tem comandos DEA GTI4 (ou GTI2) usa a **montagem A**: só falta comprar o 291/X. A
+montagem B só se justifica se o comando do dia a dia tiver de ser o WEATEM 5 e se encontrar um TRANSMY usado.
+
+Em qualquer das montagens, os dois portões podem ainda aparecer no Home Assistant, com estado, através de um ESP32
+(ESPHome) ou de módulos **Shelly Uni**. E um Shelly pode substituir o módulo de iluminação Extel.
 
 Fontes: manual Extel VERA (CFI EXTEL 05/2011 V2, placa ATV 3), manual Extel TRANSMY, manual DEA "Spazio 702S/703S"
 (central 124RRZ, Tabelas 1 e 2), manual DEA 291X/433 (I75003 Rev 00, 01/2025).
@@ -54,7 +57,7 @@ MOT2, MOT1**, depois BAT e o secundário do transformador.
 | **17 PEDON** – **21 COM** | N.A. | **fechar** (com P030 = 1, PED inicia o fecho) |
 | **18 STOP** – **21 COM** | N.F. | parar: contacto **NF** de um relé em série, no lugar da ponte |
 | **5 – 6** | contacto livre, máx. 5 A | com **P027 = 0**: fechado com o portão aberto ou em movimento, abre quando o fecho termina (sensor "fechado") |
-| **9 – 10** | +24 VAUX | alimentação de acessórios (recetor TRANSMY, ESP32 via conversor 24 → 5 V) |
+| **9 – 10** | +24 VAUX | alimentação de acessórios (recetor TRANSMY, Shelly Uni, ESP32 via conversor 24 → 5 V) |
 | 19 FOTOC, 20 SIC | N.F. | segurança: manter |
 
 Parâmetros: **P030 = 001**, **P027 = 000**. O recetor integrado fica em rolling code completo (valor de P008 do
@@ -73,6 +76,15 @@ seguro mesmo com o portão parado.
 | 2 | Seccionado DEA | PED (fecha) | central 124RRZ |
 | 3 | Batente Extel | abertura total | 291/X canal 1 → STR |
 | 4 | Batente Extel | abertura parcial | 291/X canal 2 → PED |
+
+**Comando GTI2 (dois botões):** fica dedicado a **um só portão**. A 124RRZ memoriza o comando inteiro e o canal 2
+está atribuído ao PED (fechar), por isso um GTI2 memorizado na central fecharia o seccionado com o botão 2 mesmo
+que esse botão estivesse também no 291/X. Escolha uma de duas:
+
+| Uso do GTI2 | Botão 1 | Botão 2 | Memorizar em |
+|---|---|---|---|
+| só seccionado | abrir (START) | fechar (PED) | 124RRZ (P005) |
+| só batente | total (291/X CH1 → STR) | parcial (291/X CH2 → PED) | 291/X, **não** na 124RRZ |
 
 **Recetor DEA 291X/433** (manual I75003): aceita "todos os radiocomandos DEA System com codificação 433,92 MHz",
 em Dip Switch, Fix Code, **Rolling Code** ou D.A.R.T.; 2 canais; contactos de 0,5 A a 30 V; 1000 comandos;
@@ -94,7 +106,8 @@ Configuração:
 2. **Reset de memória**, obrigatório na primeira instalação e sempre que se mudam os DIP: P1 premido cerca de 20 s
    até os LEDs piscarem 4 vezes. Os DIP só são lidos no fim do reset.
 3. Memorizar: toque curto em **P1** → LED CH1 aceso → premir o **botão 3** do GTI4 (o LED apaga 1 s a confirmar).
-   Novo toque em P1 → LED CH2 → premir o **botão 4**. Termina sozinho ao fim de 10 s.
+   Novo toque em P1 → LED CH2 → premir o **botão 4**. Termina sozinho ao fim de 10 s. Repetir para cada GTI4 e,
+   no caso de um GTI2 "só batente", com os botões 1 e 2.
 4. Na 124RRZ, memorizar o GTI4 (P005) e confirmar P009 (START = canal 1, PED = canal 2).
 
 O recetor tem de ficar numa caixa com proteção adequada (caixa DEA BOX ou equivalente); a caixa 100F que vem com o
@@ -128,7 +141,16 @@ em novembro de 2026 nos catálogos Avidsen e Extel Umii). Só em segunda mão, p
 
 Independente das montagens A e B. O estado vem do contacto 5-6 da central; o comando é por impulsos em 16, 17 e 18.
 
-### Opção 1: ESP32 com ESPHome (recomendado) — `esphome/portao-seccionado.yaml`
+Que módulos servem: só os que têm **contacto seco** (saída sem tensão) podem ir aos bornes de comando.
+
+| Módulo | Contacto seco | Alimentação | Uso aqui |
+|---|---|---|---|
+| **Shelly Uni** | sim, 2 saídas (máx. 100 mA, 36 V DC) | 12–36 V DC ou 12–24 V AC | comando e estado de um portão |
+| **Shelly 1** (Gen1) / **Plus 1** | sim, 1 saída | 110–240 V AC, 24–60 V DC ou 12 V DC (Gen1) | um comando, ou a iluminação |
+| Shelly 1PM | **não**, a saída leva a tensão de alimentação | 230 V AC ou 24 V DC | só a luz de 230 V |
+| Shelly 2.5 / 2PM | **não**, idem | 230 V AC | **não ligar** aos portões |
+
+### Opção 1: ESP32 com ESPHome — `esphome/portao-seccionado.yaml`
 
 Material: ESP32 DevKit, módulo de 3 relés com contactos NA e NF, alimentação a partir de 9-10 (24 V) por conversor
 24 → 5 V.
@@ -156,32 +178,63 @@ Comportamento:
 - **Fecho não confirmado:** se o contacto 5-6 não confirmar o fecho até `tempo_maximo` (fotocélula ou obstáculo), o
   estado fica "aberto".
 
-### Opção 2: relés já integrados no Home Assistant — `packages/extel_dea_spazio.yaml`
+É a única opção com a **paragem** (STOP) a partir do Home Assistant, porque precisa de um relé com contacto NF.
 
-Para quem prefere, por exemplo, Shelly com saídas livres de potencial nos mesmos bornes.
+### Opção 2: Shelly Uni (ou outros relés já integrados) — `packages/extel_dea_spazio.yaml`
+
+Um **Shelly Uni** por portão, alimentado pela própria placa. Sem soldaduras nem ESP32.
+
+| Shelly Uni | Seccionado DEA (124RRZ) | Batente Extel (ATV 3) |
+|---|---|---|
+| Alimentação | **9 – 10** (24 V), com a polaridade do manual | **VA** (+12 V) e **⏚** |
+| Saída 1 | **16 – 21**, abrir | **STR – ⏚**, total |
+| Saída 2 | **17 – 21**, fechar | **PED – ⏚**, parcial |
+| Entrada 1 | contacto **5-6** (portão não fechado) | reed switch na folha (folha fechada) |
+| Entrada 2 | reed switch de portão aberto (opcional) | **S1** (portão em movimento), ver Iluminação |
+| Sensor | até 3 DS18B20 ou 1 DHT22 (temperatura) | idem |
+
+- **Entradas:** as do Uni leem tensão (2,2–36 V DC), não um contacto sozinho. Um contacto seco (5-6, reed switch)
+  liga entre o **positivo da alimentação do Uni** e a entrada.
+- **Impulsos:** o script do package faz impulsos de 0,6 s. Configure também no Uni um "auto-off" curto como
+  proteção. No batente nenhum impulso pode chegar a 1 s, porque a placa ATV 3 bloqueia.
+- **Sem paragem:** o Uni não tem contacto NF, portanto o STOP (18-21) fica só nos comandos e na botoneira. No
+  package, apague `stop_cover` e o script `portao_seccionado_parar`, e, na montagem A, as automações dos botões C
+  e D.
+- **Segurança da rede:** o Shelly passa a abrir o portão. Palavra-passe no Shelly, nuvem desligada se só usar o
+  Home Assistant, e de preferência numa rede Wi-Fi separada para equipamentos.
+
+Instalação do package:
 
 1. Em `configuration.yaml`:
    ```yaml
    homeassistant:
      packages: !include_dir_named packages
    ```
-2. Copiar o ficheiro para `<config>/packages/` e substituir as entidades marcadas com `# ALTERAR`.
+2. Copiar o ficheiro para `<config>/packages/` e substituir as entidades marcadas com `# ALTERAR` pelas do Shelly
+   (saídas como `switch`, entradas como `binary_sensor`; com P027 = 0 a entrada 1 fica "on" com o portão aberto).
 3. Reiniciar o Home Assistant. Aparece `cover.portao_seccionado`.
 
-Funciona como a opção 1, mas depende de o Home Assistant e a rede estarem a funcionar.
+Funciona como a opção 1, mas a lógica corre no Home Assistant: depende de ele e da rede estarem a funcionar.
 
 ### Batente Extel no Home Assistant (opcional)
 
-Relés de contacto seco NA em **STR – ⏚** (total) e **PED – ⏚** (parcial), em paralelo com o WE 8111 BIS e com o
-291/X. Impulsos curtos (0,35 a 0,6 s). O package tem os dois scripts comentados. **Não** ligue estes relés a botões
-que um recetor já trate: o portão receberia duas ordens seguidas e podia parar ou inverter.
+Shelly Uni (tabela acima) ou outros relés de contacto seco NA em **STR – ⏚** (total) e **PED – ⏚** (parcial), em
+paralelo com o WE 8111 BIS e com o 291/X. Impulsos curtos (0,35 a 0,6 s). O package tem os dois scripts comentados.
+**Não** associe estes relés a botões que um recetor já trate: o portão receberia duas ordens seguidas e podia parar
+ou inverter.
 
 ## Iluminação: Shelly no lugar do módulo WEATCR 2
 
 O WEATCR 2 liga a **S1** (TRIG), **⏚** (GND) e **VA** (Vin, 12 V) e acende uma luz de 230 V durante 60 s, tempo
-fixo, quando o portão se move. Um **Shelly Plus 1** faz o mesmo e junta o Home Assistant:
+fixo, quando o portão se move. Há duas formas de o substituir por Shelly.
 
-| Shelly Plus 1 | Ligação |
+**Com o Shelly Uni do batente (se já o tiver):** S1 na **entrada 2** do Uni e um **Shelly 1PM** (ou 1) na luz, a
+230 V. Na entrada 2 do Uni, uma ação local de URL liga o 1PM com temporizador, por exemplo
+`http://<ip-do-1pm>/relay/0?turn=on&timer=120`. Funciona sem o Home Assistant, só com a rede Wi-Fi.
+
+**Com um Shelly 1 / Plus 1 a 12 V, junto à placa:**
+
+| Shelly 1 (Gen1) ou Plus 1 | Ligação |
 |---|---|
 | Alimentação 12 V DC | **VA** e **⏚** |
 | Entrada SW | **S1** |
@@ -189,9 +242,9 @@ fixo, quando o portão se move. Um **Shelly Plus 1** faz o mesmo e junta o Home 
 
 - O temporizador passa a ser o "auto-off" do Shelly, afinável. O Home Assistant pode acender a luz por outras
   razões e usar a entrada SW como sensor de **"batente em movimento"**.
-- **Confirmar a polaridade do S1** com um multímetro, entre S1 e ⏚, com o portão em movimento: a entrada SW
-  alimentada a 12 V DC dispara quando é ligada ao positivo. Se o S1 puxar à massa, é preciso um pequeno relé ou um
-  transístor a inverter.
+- **Confirmar a polaridade do S1** com um multímetro, entre S1 e ⏚, com o portão em movimento, nas duas formas:
+  a entrada SW do Shelly 1 e a entrada do Uni disparam com tensão positiva. Se o S1 puxar à massa, é preciso um
+  pequeno relé ou um transístor a inverter.
 - Como comuta 230 V, o Shelly fica, como o WEATCR 2, numa caixa de classe II IP44 dentro do armário do motor.
 - Um módulo de luz Extel Casa (433 MHz) **não** serve: só responde a interruptores e comandos Casa, e a placa ATV 3
   não os emite.
@@ -207,6 +260,9 @@ fixo, quando o portão se move. Um **Shelly Plus 1** faz o mesmo e junta o Home 
 ## Limitações conhecidas
 
 - A montagem B depende de encontrar um TRANSMY usado. Não há recetor novo que aprenda o WEATEM 5.
+- Um GTI2 só serve um dos portões (ver montagem A).
+- Com Shelly Uni não há paragem a partir do Home Assistant, e o "auto-off" mínimo do Uni deve ser confirmado na
+  aplicação Shelly.
 - O valor exato de P009 para "START = canal 1, PED = canal 2" e o valor de P008 para rolling completo devem ser
   lidos na Tabela 2 do manual DEA; o README não os fixa.
 - A configuração ESPHome passa na validação do ESPHome 2026.10 e o package passa no `check_config` do
